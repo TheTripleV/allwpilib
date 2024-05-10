@@ -21,7 +21,7 @@ import java.util.function.Supplier;
  * <p>This class is provided by the NewCommands VendorDep
  */
 public class DeferredCommand extends Command {
-  private final Command m_nullCommand =
+  private final Command m_nullCommand = 
       new PrintCommand("[DeferredCommand] Supplied command was null!");
 
   private final Supplier<Command> m_supplier;
