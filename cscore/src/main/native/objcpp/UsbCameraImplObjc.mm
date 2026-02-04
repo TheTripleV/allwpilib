@@ -1106,6 +1106,15 @@ err:
       std::string errorStr = str;
       OBJCERROR("Capture session runtime error: {}", errorStr);
     }
+
+    // AVCaptureSessionRuntimeErrorNotification is delivered on an arbitrary
+    // thread.  All session state manipulation must happen on sessionQueue.
+    // After a runtime error the session is stopped and will not restart on its
+    // own; disconnect and reconnect to recover.
+    dispatch_async(self.sessionQueue, ^{
+      [self deviceDisconnect];
+      [self deviceConnect];
+    });
   }
 }
 

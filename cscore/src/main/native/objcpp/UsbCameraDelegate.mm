@@ -30,6 +30,9 @@
 
   // Buffer always comes in a 32BGRA
   auto imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+  if (!imageBuffer) {
+    return;
+  }
 
   CVPixelBufferLockBaseAddress(imageBuffer, 0);
 

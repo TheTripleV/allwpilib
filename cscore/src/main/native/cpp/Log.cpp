@@ -9,7 +9,11 @@ void cs::NamedLogV(wpi::Logger& logger, unsigned int level, const char* file,
                    fmt::string_view format, fmt::format_args args) {
   fmt::memory_buffer out;
   fmt::format_to(fmt::appender{out}, "{}: ", name);
-  fmt::vformat_to(fmt::appender{out}, format, args);
+  try {
+    fmt::vformat_to(fmt::appender{out}, format, args);
+  } catch (const fmt::format_error& e) {
+    fmt::format_to(fmt::appender{out}, "<fmt error: {}>", e.what());
+  }
   out.push_back('\0');
   logger.DoLog(level, file, line, out.data());
 }

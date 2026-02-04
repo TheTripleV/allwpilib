@@ -20,7 +20,11 @@ void Logger::LogV(unsigned int level, const char* file, unsigned int line,
     return;
   }
   fmt::memory_buffer out;
-  fmt::vformat_to(fmt::appender{out}, format, args);
+  try {
+    fmt::vformat_to(fmt::appender{out}, format, args);
+  } catch (const fmt::format_error& e) {
+    fmt::format_to(fmt::appender{out}, "<fmt error: {}>", e.what());
+  }
   out.push_back('\0');
   m_func(level, file, line, out.data());
 }
