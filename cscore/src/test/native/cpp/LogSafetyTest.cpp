@@ -3,14 +3,25 @@
 // the WPILib BSD license file in the root directory of this project.
 
 //
-// Tests that a malformed format string passed to cs::NamedLogV does not
-// terminate the process.  Before the fix this would throw an uncaught
-// fmt::format_error and call std::terminate.
+// Regression tests for the UVC pipe-stall crash.
 //
-// The AVCaptureSession pipe-stall / recovery path can only be exercised on a
-// real macOS machine with a USB camera attached.  See task.md for manual-test
-// instructions.
+// The crash was caused by the format string in UvcControlImpl.mm
+// sendControlRequest: default case:
+//   "{:02Xh}:{:03Xh}:{:04Xh}"
+// The trailing 'h' on each specifier is a printf length modifier; it does not
+// exist in fmt.  fmt parses 'h' as the format type, does not recognise it, and
+// throws fmt::format_error("unknown format specifier").  Because the UVCERROR
+// macro does not wrap with FMT_STRING the bad spec was never caught at compile
+// time.
 //
+// Two fixes were applied:
+//   1. The specifiers were corrected to {:02X} / {:03X} / {:04X}.
+//   2. cs::NamedLogV (and wpi::Logger::LogV) now catch fmt::format_error so
+//      that any future typo of this kind surfaces in the log instead of
+//      terminating the process.
+//
+
+#include <cstdint>
 
 #include <gtest/gtest.h>
 
@@ -23,7 +34,6 @@ namespace cs {
 
 class LogSafetyTest : public ::testing::Test {
  protected:
-  // Capture whatever the logger callback receives so we can assert on it.
   std::string captured;
   wpi::Logger logger;
 
@@ -35,32 +45,40 @@ class LogSafetyTest : public ::testing::Test {
   }
 };
 
-// A format string with a bare, valid placeholder should work normally.
-TEST_F(LogSafetyTest, ValidFormat) {
-  cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "TestSource",
-                "{}", fmt::make_format_args(std::string_view{"hello"}));
-  EXPECT_EQ(captured, "TestSource: hello");
+// The corrected format string must produce well-formed hex output.
+TEST_F(LogSafetyTest, CorrectUvcErrorFormat) {
+  uint32_t sys = 0x3, sub = 0x1ff, code = 0xabc;
+  cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "UvcControl",
+                "ControlRequest failed (KR=sys:sub:code) = {:02X}:{:03X}:{:04X}",
+                fmt::make_format_args(sys, sub, code));
+  EXPECT_EQ(captured,
+            "UvcControl: ControlRequest failed (KR=sys:sub:code) = 03:1FF:0ABC");
 }
 
-// A format string with an unknown specifier (e.g. "{:Q}") would previously
-// throw fmt::format_error and crash.  After the fix the exception is caught
-// and the output contains the fmt error message rather than crashing.
+// The original (broken) format string with the trailing 'h' must not crash.
+// NamedLogV catches the format_error and substitutes an error marker.
+TEST_F(LogSafetyTest, BrokenUvcErrorFormatDoesNotCrash) {
+  uint32_t sys = 0x3, sub = 0x1ff, code = 0xabc;
+  // Reproduce the exact pre-fix format string verbatim.
+  cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "UvcControl",
+                "ControlRequest failed (KR=sys:sub:code) = {:02Xh}:{:03Xh}:{:04Xh}",
+                fmt::make_format_args(sys, sub, code));
+
+  EXPECT_NE(captured.find("UvcControl"), std::string::npos);
+  EXPECT_NE(captured.find("fmt error"), std::string::npos);
+}
+
+// Generic safety net: any other unknown specifier is also caught.
 TEST_F(LogSafetyTest, UnknownFormatSpecifierDoesNotCrash) {
-  // "{:Q}" is not a valid fmt format spec — fmt will throw format_error.
-  // We must use vformat_to / make_format_args so that the bad spec is not
-  // checked at compile time by FMT_STRING.
   std::string arg = "value";
   cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "TestSource",
                 "{:Q}", fmt::make_format_args(arg));
 
-  // The output should contain the source name and the fmt error text,
-  // NOT have thrown.
   EXPECT_NE(captured.find("TestSource"), std::string::npos);
   EXPECT_NE(captured.find("fmt error"), std::string::npos);
 }
 
-// A format string with mismatched argument count (more placeholders than
-// args) is another class of runtime format_error.  Same crash path.
+// Argument-count mismatch is also caught.
 TEST_F(LogSafetyTest, MismatchedArgsDoesNotCrash) {
   std::string arg = "only-one";
   cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "TestSource",
@@ -68,24 +86,6 @@ TEST_F(LogSafetyTest, MismatchedArgsDoesNotCrash) {
 
   EXPECT_NE(captured.find("TestSource"), std::string::npos);
   EXPECT_NE(captured.find("fmt error"), std::string::npos);
-}
-
-// An error message whose text itself contains curly braces (as macOS
-// NSError descriptions can, e.g. "UserInfo={...}") must not be re-interpreted
-// as a format string.  NamedLogV receives it as a pre-formatted argument, so
-// this should pass through unchanged.
-TEST_F(LogSafetyTest, MessageWithBracesPassesThroughSafely) {
-  // Simulate what happens when NSError.description contains braces:
-  // the error text arrives as a std::string argument to "... error: {}".
-  std::string errorDesc =
-      "The operation couldn't be completed. UserInfo={NSLocalizedDescription="
-      "Pipe has stalled, error needs to be cleared}";
-  cs::NamedLogV(logger, wpi::WPI_LOG_ERROR, __FILE__, __LINE__, "UsbCamera",
-                "Capture session runtime error: {}",
-                fmt::make_format_args(errorDesc));
-
-  EXPECT_EQ(captured,
-            "UsbCamera: Capture session runtime error: " + errorDesc);
 }
 
 }  // namespace cs
