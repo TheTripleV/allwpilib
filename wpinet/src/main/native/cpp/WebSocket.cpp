@@ -25,6 +25,7 @@
 #include "wpi/util/print.hpp"
 #include "wpi/util/raw_ostream.hpp"
 #include "wpi/util/sha1.hpp"
+#include "wpi/util/timestamp.hpp"
 
 using namespace wpi::net;
 
@@ -432,7 +433,7 @@ static inline void Unmask(std::span<uint8_t> data,
 }
 
 void WebSocket::HandleIncoming(uv::Buffer& buf, size_t size) {
-  m_lastReceivedTime = m_stream.GetLoopRef().Now().count();
+  m_lastReceivedTime = wpi::util::Now() / 1000;
 
   // ignore incoming data if we're failed or closed
   if (m_state == State::FAILED || m_state == State::CLOSED) {
