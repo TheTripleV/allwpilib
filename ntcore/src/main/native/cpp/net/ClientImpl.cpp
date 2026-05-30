@@ -166,6 +166,10 @@ void ClientImpl::Publish(int32_t pubuid, std::string_view name,
                          std::string_view typeStr,
                          const wpi::util::json& properties,
                          const PubSubOptionsImpl& options) {
+  // guard against massive allocation from out-of-range pubuid
+  if (pubuid < 0 || static_cast<uint32_t>(pubuid) >= 65536) {
+    return;
+  }
   if (static_cast<uint32_t>(pubuid) >= m_publishers.size()) {
     m_publishers.resize(pubuid + 1);
   }
