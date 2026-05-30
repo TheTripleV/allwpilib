@@ -109,7 +109,25 @@ class NetworkOutgoingQueue {
     infoIt->getSecond().queueIndex = queueIndex;
   }
 
-  void EraseId(int id) { m_idMap.erase(id); }
+  void EraseId(int id) {
+    auto infoIt = m_idMap.find(id);
+    if (infoIt == m_idMap.end()) {
+      return;
+    }
+    // remove any pending messages for this id from its queue
+    auto& q = m_queues[infoIt->getSecond().queueIndex];
+    auto end = std::remove_if(q.msgs.begin(), q.msgs.end(),
+                              [&](const auto& e) { return e.id == id; });
+    for (auto it = end; it != q.msgs.end(); ++it) {
+      if (auto m = std::get_if<ValueMsg>(&it->msg.contents)) {
+        m_totalSize -= sizeof(Message) + m->value.size();
+      } else {
+        m_totalSize -= sizeof(Message);
+      }
+    }
+    q.msgs.erase(end, q.msgs.end());
+    m_idMap.erase(infoIt);
+  }
 
   template <typename T>
   void SendMessage(int id, T&& msg) {
