@@ -258,8 +258,9 @@ void WebSocketConnection::Send(
   }
   wpi::net::WebSocket::Frame frame{opcode, os.bufs()};
   WPI_DEBUG4(m_logger, "Send({})", static_cast<uint8_t>(opcode));
-  m_ws.SendFrames({{frame}}, [selfweak = weak_from_this()](auto bufs, auto) {
+  m_ws.SendFrames({{frame}}, [selfweak = weak_from_this()](auto bufs, auto err) {
     if (auto self = selfweak.lock()) {
+      self->m_err = err;
       self->ReleaseBufs(bufs);
     } else {
       for (auto&& buf : bufs) {
