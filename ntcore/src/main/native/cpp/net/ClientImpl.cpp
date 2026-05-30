@@ -65,8 +65,13 @@ void ClientImpl::ProcessIncomingBinary(uint64_t curTimeMs,
     }
     DEBUG4("BinaryMessage({})", id);
 
-    // handle RTT ping response (only use first one)
+    // handle RTT ping response
     if (id == -1) {
+      // update pong time for pre-v4.1 timeout tracking (outside the
+      // m_haveTimeOffset guard so it continues after initial offset acquired)
+      if (m_wire.GetVersion() < 0x0401) {
+        m_pongTimeMs = curTimeMs;
+      }
       if (!m_haveTimeOffset) {
         if (!value.IsInteger()) {
           WARN("RTT ping response with non-integer type {}",
@@ -75,9 +80,6 @@ void ClientImpl::ProcessIncomingBinary(uint64_t curTimeMs,
         }
         DEBUG4("RTT ping response time {} value {}", value.time(),
                value.GetInteger());
-        if (m_wire.GetVersion() < 0x0401) {
-          m_pongTimeMs = curTimeMs;
-        }
         int64_t now = wpi::util::Now();
         int64_t rtt2 = (now - value.GetInteger()) / 2;
         if (rtt2 < m_rtt2Us) {
