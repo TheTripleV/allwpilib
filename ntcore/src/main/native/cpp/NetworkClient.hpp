@@ -83,6 +83,13 @@ class NetworkClientBase : public INetworkClient {
   std::pair<std::string, unsigned int> m_dsClientServer{"", 0};
   std::shared_ptr<wpi::net::DsClient> m_dsClient;
 
+  // exponential backoff for reconnect
+  // Fixed point: 100ms base, 10ms units for the rate value.
+  // The timer is in ms.
+  static constexpr uv::Timer::Time kReconnectRateMin{100};
+  static constexpr uv::Timer::Time kReconnectRateMax{10000};
+  uv::Timer::Time m_reconnectRate{kReconnectRateMin};
+
   // shared with user
   std::atomic<wpi::net::uv::Async<>*> m_flushLocalAtomic{nullptr};
   std::atomic<wpi::net::uv::Async<>*> m_flushAtomic{nullptr};

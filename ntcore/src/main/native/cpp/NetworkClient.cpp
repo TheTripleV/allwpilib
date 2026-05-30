@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -27,7 +28,7 @@
 using namespace wpi::nt;
 namespace uv = wpi::net::uv;
 
-static constexpr uv::Timer::Time kReconnectRate{1000};
+static constexpr uv::Timer::Time kParallelRetryRate{1000};
 static constexpr uv::Timer::Time kWebsocketHandshakeTimeout{500};
 // use a larger max message size for websockets
 static constexpr size_t kMaxMessageSize = 2 * 1024 * 1024;
@@ -134,12 +135,17 @@ void NetworkClientBase::DoDisconnect(std::string_view reason) {
   m_connList.RemoveConnection(m_connHandle);
   m_connHandle = 0;
 
-  // start trying to connect again
-  uv::Timer::SingleShot(m_loop, kReconnectRate, [this] {
+  // start trying to connect again with exponential backoff
+  // Base: 100ms. Backoff: multiply by 2 each retry. Cap: 10 seconds.
+  uv::Timer::SingleShot(m_loop, m_reconnectRate, [this] {
     if (m_parallelConnect) {
       m_parallelConnect->Disconnected();
     }
   });
+
+  // exponential backoff for next time, capped at max
+  m_reconnectRate = (std::min)(
+      static_cast<uv::Timer::Time>(m_reconnectRate * 2), kReconnectRateMax);
 }
 
 NetworkClient::NetworkClient(
@@ -151,7 +157,7 @@ NetworkClient::NetworkClient(
       m_timeSyncUpdated{std::move(timeSyncUpdated)} {
   m_loopRunner.ExecAsync([this](uv::Loop& loop) {
     m_parallelConnect = wpi::net::ParallelTcpConnector::Create(
-        loop, kReconnectRate, m_logger,
+        loop, kParallelRetryRate, m_logger,
         [this](uv::Tcp& tcp) { TcpConnected(tcp); }, true);
 
     m_readLocalTimer = uv::Timer::Create(loop);
@@ -257,6 +263,9 @@ void NetworkClient::WsConnected(wpi::net::WebSocket& ws, uv::Tcp& tcp,
 
   INFO("CONNECTED NT4 to {} port {}", connInfo.remote_ip, connInfo.remote_port);
   m_connHandle = m_connList.AddConnection(connInfo);
+
+  // reset exponential backoff on successful connection
+  m_reconnectRate = kReconnectRateMin;
 
   bool local = wpi::util::starts_with(connInfo.remote_ip, "127.");
 
