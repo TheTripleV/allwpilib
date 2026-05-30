@@ -581,6 +581,9 @@ bool wpi::nt::net::WireDecodeBinary(std::span<const uint8_t>* in, int* outId,
     }
     default:
       *error = fmt::format("unrecognized type {}", type);
+      // must skip the remaining value element before closing the array
+      // to avoid mpack debug-mode assertion failure
+      mpack_discard(&reader);
       mpack_done_array(&reader);
       mpack_reader_destroy(&reader);
       return false;
