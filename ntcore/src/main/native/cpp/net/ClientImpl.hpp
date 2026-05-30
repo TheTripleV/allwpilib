@@ -99,6 +99,7 @@ class ClientImpl final : private ServerMessageHandler {
   uint64_t m_pongTimeMs{0};
   uint32_t m_rtt2Us{UINT32_MAX};
   bool m_haveTimeOffset{false};
+  uint64_t m_nextOffsetRetryMs{0};
 
   // periodic sweep handling
   static constexpr uint32_t kMinPeriodMs = 5;

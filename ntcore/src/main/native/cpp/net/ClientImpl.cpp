@@ -146,6 +146,13 @@ void ClientImpl::SendOutgoing(uint64_t curTimeMs, bool flush) {
 
   // wait until we have a RTT measurement before sending messages
   if (!m_haveTimeOffset) {
+    if (curTimeMs >= m_nextOffsetRetryMs) {
+      // retry the RTT ping in case the initial response was lost
+      auto now = wpi::util::Now();
+      m_wire.SendBinary(
+          [&](auto& os) { WireEncodeBinary(os, -1, 0, Value::MakeInteger(now)); });
+      m_nextOffsetRetryMs = curTimeMs + kRttIntervalMs;
+    }
     return;
   }
 
